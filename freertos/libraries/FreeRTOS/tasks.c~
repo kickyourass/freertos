@@ -369,7 +369,7 @@ static tskTCB *prvAllocateTCBAndStack( unsigned short usStackDepth, portSTACK_TY
  */
 #if ( configUSE_TRACE_FACILITY == 1 )
 
-	void prvListTaskWithinSingleList( const signed char *pcWriteBuffer, xList *pxList ,char* cStatus) PRIVILEGED_FUNCTION;
+	static void prvListTaskWithinSingleList( const signed char *pcWriteBuffer, xList *pxList, signed char cStatus ) PRIVILEGED_FUNCTION;
 
 #endif
 
@@ -2161,12 +2161,11 @@ tskTCB *pxNewTCB;
 
 #if ( configUSE_TRACE_FACILITY == 1 )
 
-	void prvListTaskWithinSingleList( const signed char *pcWriteBuffer, xList *pxList ,char* cStatus)
+	static void prvListTaskWithinSingleList( const signed char *pcWriteBuffer, xList *pxList, signed char cStatus )
 	{
 	volatile tskTCB *pxNextTCB, *pxFirstTCB;
 	unsigned short usStackRemaining;
-	//PRIVILEGED_DATA static char pcStatusString[ 50 ];
-	char pcTempStr[20];
+	PRIVILEGED_DATA static char pcStatusString[ 50 ];
 
 		/* Write the details of all the TCB's in pxList into the buffer. */
 		listGET_OWNER_OF_NEXT_ENTRY( pxFirstTCB, pxList );
@@ -2183,23 +2182,8 @@ tskTCB *pxNewTCB;
 			}
 			#endif			
 			
-			//sprintf( pcStatusString, ( char * ) "%s\t\t%c\t%u\t%u\t%u\r\n", pxNextTCB->pcTaskName, cStatus, ( unsigned int ) pxNextTCB->uxPriority, usStackRemaining, ( unsigned int ) pxNextTCB->uxTCBNumber );
-
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pxNextTCB->pcTaskName) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
-			int2str(pxNextTCB->uxPriority,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
-			int2str(usStackRemaining,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
-			int2str(pxNextTCB->uxTCBNumber,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\n\r" );
-
-			
-			
-			
+			sprintf( pcStatusString, ( char * ) "%s\t\t%c\t%u\t%u\t%u\r\n", pxNextTCB->pcTaskName, cStatus, ( unsigned int ) pxNextTCB->uxPriority, usStackRemaining, ( unsigned int ) pxNextTCB->uxTCBNumber );
+			strcat( ( char * ) pcWriteBuffer, ( char * ) pcStatusString );
 
 		} while( pxNextTCB != pxFirstTCB );
 	}
