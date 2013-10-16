@@ -1,7 +1,7 @@
 #ifndef __FIO_H__
 #define __FIO_H__
 
-#include <stdio.h>
+//#include <stdio.h>
 
 enum open_types_t {
     O_RDONLY = 0,

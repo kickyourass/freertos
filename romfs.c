@@ -103,3 +103,4 @@ void register_romfs(const char * mountpoint, const uint8_t * romfs) {
 //    DBGOUT("Registering romfs `%s' @ %p\r\n", mountpoint, romfs);
     register_fs(mountpoint, romfs_open, (void *) romfs);
 }
+

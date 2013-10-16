@@ -1,4 +1,4 @@
-#include <string.h>
+//#include <string.h>
 #include <FreeRTOS.h>
 #include <semphr.h>
 #include <unistd.h>

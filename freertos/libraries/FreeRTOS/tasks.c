@@ -2185,17 +2185,17 @@ tskTCB *pxNewTCB;
 			
 			//sprintf( pcStatusString, ( char * ) "%s\t\t%c\t%u\t%u\t%u\r\n", pxNextTCB->pcTaskName, cStatus, ( unsigned int ) pxNextTCB->uxPriority, usStackRemaining, ( unsigned int ) pxNextTCB->uxTCBNumber );
 
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pxNextTCB->pcTaskName) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
+			strcat( ( char * ) pcWriteBuffer, ( char * ) (pxNextTCB->pcTaskName) );
+			strcat( ( char * ) pcWriteBuffer, "\t\t" );
 			int2str(pxNextTCB->uxPriority,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
+			strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
+			strcat( ( char * ) pcWriteBuffer, "\t\t" );
 			int2str(usStackRemaining,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\t\t" );
+			strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
+			strcat( ( char * ) pcWriteBuffer, "\t\t" );
 			int2str(pxNextTCB->uxTCBNumber,pcTempStr);
-			my_strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
-			my_strcat( ( char * ) pcWriteBuffer, "\n\r" );
+			strcat( ( char * ) pcWriteBuffer, ( char * ) (pcTempStr) );
+			strcat( ( char * ) pcWriteBuffer, "\n\r" );
 
 			
 			

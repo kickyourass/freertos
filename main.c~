@@ -6,10 +6,7 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
-//#include <string.h>
-
-#include "filesystem.h"
-#include "fio.h"
+#include <string.h>
 
 static void setup_hardware();
 
@@ -17,17 +14,7 @@ volatile xQueueHandle serial_str_queue = NULL;
 volatile xSemaphoreHandle serial_tx_wait_sem = NULL;
 volatile xQueueHandle serial_rx_queue = NULL;
 
-int strcat(char *a, char *b) __attribute__ ((naked));
 
-int strcat(char *a,char *b){
-	int i=0,j=0;
-	while(a[i++]);//no error handler,be careful
-
-	do{
-		a[(i++)-1]=b[j];
-	}while(b[j++]);
-	return j;
-}
 int strcmp(const char *a, const char *b) __attribute__ ((naked));
 int strcmp(const char *a, const char *b)
 {
@@ -44,7 +31,7 @@ int strcmp(const char *a, const char *b)
 		:::
 	);
 }
-//#define puts(var) fio_write(1, #var, strlen(#var));
+
 size_t strlen(const char *s) __attribute__ ((naked));
 size_t strlen(const char *s)
 {
@@ -59,19 +46,12 @@ size_t strlen(const char *s)
 		:::
 	);
 }
-int str2int(char* str){
-	int temp=0,idx=0;
-	while(str[idx]){
-		temp*=10;
-		temp+=(str[idx++]-0x30);
-	}
-	return temp;
-}
 
 void puts(char *s)
 {
 	while (*s) {
-		while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+		while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET)
+			/* wait */ ;
 		USART_SendData(USART2, *s);
 		s++;
 	}
@@ -168,20 +148,6 @@ void send_byte(char ch)
 	USART_SendData(USART2, ch);
 	USART_ITConfig(USART2, USART_IT_TXE, ENABLE);
 }
-int semihost_call(unsigned char sys_code, void *arg) __attribute__ ((naked));
-int semihost_call(unsigned char sys_code, void *arg)
-{
-    __asm__( \
-      "bkpt 0xAB\n"\
-      "nop\n" \
-      "bx lr\n"\
-        :::\
-    );
-}
-int host_sys_cmd(const char *cmd){
-	unsigned int arg[2] ={cmd,strlen(cmd) };
-	return semihost_call(0x12, arg);
-}
 
 char receive_byte()
 {
@@ -277,12 +243,11 @@ void catch_msg(serial_str_msg* msg)
 			/* If the byte is an end-of-line type character, then
 			 * finish the string and inidcate we are done.
 			 */
-			if ( (curr_char>=sizeof(msg->str)-1 ) || (ch == '\r') || (ch == '\n')) {
+			if ( (curr_char>=sizeof(msg->str) ) || (ch == '\r') || (ch == '\n')) {
 				done = -1;
 				/* Otherwise, add the character to the
 				 * response string. */
 				puts("\r\n");
-				msg->str[curr_char]=0x00;
 
 			}
 			else {
@@ -303,75 +268,36 @@ void catch_msg(serial_str_msg* msg)
 		/* Once we are done building the response string, queue the
 		 * response to be sent to the RS232 port.
 		 */
-	//	while (!xQueueSendToBack(serial_str_queue, &msg,
-		//                         portMAX_DELAY));
+		while (!xQueueSendToBack(serial_str_queue, &msg,
+		                         portMAX_DELAY));
 	
 }
 extern xList pxReadyTasksLists[ configMAX_PRIORITIES ];
-#define configUSE_TRACE_FACILITY 1
 void ps_cmd_function(){
-	static char str[500];
+	char str[10];
+	char pTempStr;
 	int i,j,count;
-	struct xList *pxTemp;
-	puts("\rtask_name\tpriority\tStack_Remaining\tTCB_Num\n\r");
+	struct xLIST_ITEM *pxTemp;
 	for(i=0;i<configMAX_PRIORITIES;i++){
-		pxTemp=&pxReadyTasksLists[i];
+		puts("\npriority\ttask_name");
+		int2str( i,str );
+		puts(str);
+
+		pxTemp=pxReadyTasksLists[i].xListEnd.pxNext;
 		count=pxReadyTasksLists[i].uxNumberOfItems;
-		if(count){
-			str[0]='\0';
-			prvListTaskWithinSingleList(str,pxTemp,'?');
-			puts(str);
+		for(j=0;j<count;j++){
+			pTempStr=((struct tskTaskControlBlock *)(pxTemp->pvOwner))->pcTaskName ;
+			pxTemp=pxTemp->pxNext;
 		}
+		puts("\n\r");
+
 	}
+
 }
-#define MAX_DUMMY_TASK_NUM 8
-
-static xTaskHandle xHandle_Dummy[MAX_DUMMY_TASK_NUM];
-
-
-void kill(char* filename){
-	int i;
-	for(i=0;i<MAX_DUMMY_TASK_NUM;i++){
-		if(strcmp( pcTaskGetTaskName(xHandle_Dummy[i]),filename )==0 ){
-			vTaskDelete(xHandle_Dummy[i]);
-			xHandle_Dummy[i]=NULL;
-			return ;
-		}
-	}
-}
-
-void my_dummy_task(){
-	while(1);
-}
-void read_romfs(char *s)
-{
-	char buf[128]="/romfs/";
-	size_t count;
-	int fd;
-	strcat(buf,s);
-	fd= fs_open(buf, 0, O_RDONLY);
-	do {
-		//Read from /romfs/test.txt to buffer
-		count = fio_read(fd, buf, sizeof(buf));
-
-		//Write buffer to fd 1 (stdout, through uart)
-		fio_write(1, buf, count);
-	} while (count);
-
-	
-}
-
 void my_shell_task(){
 	static serial_str_msg msg;
 	char pid[6];
-	int i;
-	char *pTemp_c;
-	//init dummy's handle
-	for(i=0;i<MAX_DUMMY_TASK_NUM;i++)
-		xHandle_Dummy[i]=NULL;
-
-		
-		
+	int fdout, fdin,  i,priority;
 	while(1){
 		puts("enter command:");
 		catch_msg(&msg);
@@ -391,54 +317,40 @@ void my_shell_task(){
 			puts("host cmd\tcommand on host bash \n\r");
 		}
 		else if( strcmp(msg.str,"hello") ==0){
-			puts("HelloWorld!\n\r");
+			puts("helloWorld!\n\r");
 		}
 		else if( strcmp(msg.str,"ps") ==0){
+			puts("Number of undergoing tasks:");
 			ps_cmd_function();
 			puts("\n\r");
 		}
-		else if( strcmp(msg.str,"add") ==0){
-			puts("enter name of dummy task:");
-			catch_msg(&msg);
-			for(i=0;i<MAX_DUMMY_TASK_NUM;i++)
-				if(xHandle_Dummy[i]==NULL){
-					xTaskCreate(my_dummy_task,(signed portCHAR *) msg.str,	512 , NULL, 4, &xHandle_Dummy[i]);
-					break;
-				}
+		/*else if( strcmp(str_buf,"add_proc") ==0){
+			if(!fork()){
+				dummy_func();	
+			}
 		}
-		else if( strcmp(msg.str,"kill") ==0){
-			puts("enter dummy's name:");
-			catch_msg(&msg);
-			kill(msg.str);
+		else if( strcmp(str_buf,"kill") ==0){
+			puts("enter pid:");
+			catch_msg(str_buf,10);
+			kill(str2int(str_buf) );
 		}
-		else if( strcmp(msg.str,"cat ") >0 && strcmp(msg.str,"cat z")<0 ){
-			pTemp_c=&(msg.str[4]);
-			read_romfs(pTemp_c);
-			puts("\n\r");
-		}
-		else if( strcmp(msg.str,"host ") >0 && strcmp(msg.str,"host z")<0){
-			pTemp_c=&(msg.str[5]);
-			host_sys_cmd(pTemp_c);
-		}
-		else if( strcmp(msg.str,"ls") ==0 ){
-			ls_cmd_romfs();
+		else if( strcmp(str_buf,"host cmd") ==0){
+			puts("enter cmd:");
+			catch_msg(str_buf,10);
+			host_sys_cmd(str_buf);
 		}
 		else{
-			puts(msg.str);
+			puts(str_buf);
 			puts(" is invalid command\n\r");
-		}
-		
+		}*/
 	}
 }
-
-
-extern const char _sromfs;
-
+void my_dummy_task(){
+	while(1);
+}
 int main()
 {
-	int i;
 	init_led();
-	
 
 	init_button();
 	enable_button_interrupts();
@@ -449,7 +361,6 @@ int main()
 
 	fs_init();
 	fio_init();
-	register_romfs("romfs", &_sromfs);
 	/* Create the queue used by the serial task.  Messages for write to
 	 * the RS232. */
 	serial_str_queue = xQueueCreate(10, sizeof(serial_str_msg));
@@ -460,11 +371,15 @@ int main()
 	/* Create a task to receive characters from the RS232 port and echo
 	 * them back to the RS232 port. */
 	xTaskCreate(my_shell_task,
-					(signed portCHAR *) "Shell",
-					512 , NULL,
-					4, NULL);
-	
-	
+	            (signed portCHAR *) "Serial Read/Write",
+	            512 /* stack size */, NULL,
+	            tskIDLE_PRIORITY + 10, NULL);
+	/*dummy*/
+	xTaskCreate(my_dummy_task,
+	            (signed portCHAR *) "dummy",
+	            512 /* stack size */, NULL,
+	            tskIDLE_PRIORITY , NULL);
+
 	/* Start running the tasks. */
 	vTaskStartScheduler();
 
