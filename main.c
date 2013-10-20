@@ -1,5 +1,7 @@
 #define USE_STDPERIPH_DRIVER
 #include "stm32f10x.h"
+#include <stdarg.h>
+
 
 /* Scheduler includes. */
 #include "FreeRTOS.h"
@@ -12,6 +14,10 @@
 #include "fio.h"
 
 static void setup_hardware();
+void send_byte(char );
+
+
+
 
 volatile xQueueHandle serial_str_queue = NULL;
 volatile xSemaphoreHandle serial_tx_wait_sem = NULL;
@@ -102,6 +108,25 @@ void int2str(int x,char* c_arr){
 	return ;
 }
 
+//only support %d
+void printf(char* str,...){
+	va_list marker;
+	char buf[10];
+	int i;
+	va_start(marker, str);
+	for(i=0;str[i]!='\0';i++){
+		if(str[i]!='%'){
+			send_byte(str[i]);
+		}
+		else{
+			if(str[++i]=='d'){
+				int2str( va_arg(marker, int),buf );
+				puts(buf);
+			}
+		}
+	}
+	va_end(marker);
+}
 
 /* Queue structure used for passing messages. */
 typedef struct {
@@ -225,36 +250,8 @@ void rs232_xmit_msg_task(void *pvParameters)
 }
 
 
-/* Repeatedly queues a string to be sent to the RS232.
- *   delay - the time to wait between sending messages.  A delay of 1 means
- *           wait 1/100th of a second.
- */
-void queue_str_task(const char *str, int delay)
-{
-	serial_str_msg msg;
 
-	/* Prepare the message to be queued. */
-	strcpy(msg.str, str);
 
-	while (1) {
-		/* Post the message.  Keep on trying until it is successful. */
-		while (!xQueueSendToBack(serial_str_queue, &msg,
-		       portMAX_DELAY));
-
-		/* Wait. */
-		vTaskDelay(delay);
-	}
-}
-
-void queue_str_task1(void *pvParameters)
-{
-	queue_str_task("Hello 1\n", 200);
-}
-
-void queue_str_task2(void *pvParameters)
-{
-	queue_str_task("Hello 2\n", 50);
-}
 
 #define KEY_ENTER 0x0D
 #define KEY_BACKSPACE 0x7F
@@ -310,7 +307,7 @@ void catch_msg(serial_str_msg* msg)
 extern xList pxReadyTasksLists[ configMAX_PRIORITIES ];
 #define configUSE_TRACE_FACILITY 1
 void ps_cmd_function(){
-	static char str[500];
+	char str[500];
 	int i,j,count;
 	struct xList *pxTemp;
 	puts("\rtask_name\tpriority\tStack_Remaining\tTCB_Num\n\r");
@@ -361,17 +358,147 @@ void read_romfs(char *s)
 	
 }
 
+static unsigned int lfsr=0xACE1;
+
+
+
+// Get a pseudorandom number generator from Wikipedia
+static unsigned int prng(unsigned int* ptr_lfsr )
+{
+/*	asm(
+      
+        "   ldrh    r2, [r0]         \n"
+        "   lsr     r3, r2,#2     \n"
+        "   EOR     r4, r3,r2       \n"
+        "   lsr     r3, r2,#3     \n"
+        "   EOR     r4, r4,r3       \n"
+        "   lsr     r3, r2,#5     \n"
+        "   EOR     r4, r4,r3       \n"
+        "   AND     r4, r4,#1       \n"
+        "   lsr     r2, r2,#1       \n"
+        "   lsl     r4, r4,#15      \n"
+        "   ORR     r2, r2,r4       \n"
+        "   strh    r2,[r0]       \n"
+        "   movt    r1, #0  \n"
+        "   movw   r1, #65535 \n"
+        
+        "   AND     r0,r1,r2  \n"
+    
+        
+        "   bx      lr              \n"
+		:::
+	);*/
+	//	  "   mov	  r0,#2  \n"
+
+    static unsigned int bit;
+    /* taps: 16 14 13 11; characteristic polynomial: x^16 + x^14 + x^13 + x^11 + 1 */
+    bit  = ((*ptr_lfsr >> 0) ^ (*ptr_lfsr >> 2) ^ (*ptr_lfsr >> 3) ^ (*ptr_lfsr >> 5) ) & 1;
+    *ptr_lfsr =  (*ptr_lfsr >> 1) | (bit << 15);
+    return *ptr_lfsr & 0xffff;
+}
+char* ptr_mem;
+
+
+
+struct slot {
+    void *pointer;
+    unsigned int size;
+    unsigned int lfsr;
+};
+
+#define CIRCBUFSIZE 10
+unsigned int write_pointer, read_pointer;
+static struct slot slots[CIRCBUFSIZE];
+
+
+static unsigned int circbuf_size(void)
+{
+    return (write_pointer + CIRCBUFSIZE - read_pointer) % CIRCBUFSIZE;
+}
+
+static void write_cb(struct slot foo)
+{
+    if (circbuf_size() == CIRCBUFSIZE - 1) {
+		return ;
+    }
+    slots[write_pointer++] = foo;
+    write_pointer %= CIRCBUFSIZE;
+}
+
+static struct slot read_cb(void)
+{
+    struct slot foo;
+    if (write_pointer == read_pointer) {
+        // circular buffer is empty
+        return (struct slot){ .pointer=NULL, .size=0, .lfsr=0 };
+    }
+    foo = slots[read_pointer++];
+    read_pointer %= CIRCBUFSIZE;
+    return foo;
+}
+
+void enable_prng_test(){
+	printf("%d ",lfsr);
+	prng(&lfsr);
+	
+}
+void enable_memory_test(){
+	int size,i;
+    char *p;
+	
+		while (1) {
+		
+			size = prng(&lfsr) & 0x7FF;
+		  	printf("try to allocate %d bytes\n\r", size);
+			p = (char *) pvPortMalloc(size);
+			if (p == NULL) {
+				// can't do new allocations until we free some older ones
+				while (circbuf_size() > 0) {
+					// confirm that data didn't get trampled before freeing
+					struct slot foo = read_cb();
+					p = foo.pointer;
+					lfsr = foo.lfsr;  // reset the PRNG to its earlier state
+					size = foo.size;
+					printf("free a block, size %d\n\r", size);
+					for (i = 0; i < size; i++) {
+						unsigned char u = p[i];
+					
+						unsigned char v =  prng(&lfsr);
+						if (u != v) {
+							printf("ouch:%d %d\n\r", u,v);
+							return 1;
+						}
+					}
+					vPortFree(p);
+					if ((prng(&lfsr)  & 1) == 0){
+						return;
+					}
+				}
+			} else {
+				
+				write_cb((struct slot){.pointer=p, .size=size, .lfsr=lfsr});
+				for (i = 0; i < size; i++) {
+					
+					p[i] = (unsigned char)prng(&lfsr);
+				
+				}
+				
+			}
+		}
+
+}
+
 void my_shell_task(){
 	static serial_str_msg msg;
 	char pid[6];
-	int i;
+	int i,idx=0;
 	char *pTemp_c;
+	
 	//init dummy's handle
 	for(i=0;i<MAX_DUMMY_TASK_NUM;i++)
 		xHandle_Dummy[i]=NULL;
 
-		
-		
+		//printf("hello\n\r");
 	while(1){
 		puts("enter command:");
 		catch_msg(&msg);
@@ -387,7 +514,7 @@ void my_shell_task(){
 			puts("echo\ttype a string,the shell will echo\n\r");
 			puts("hello\tshow the greetings\n\r");
 			puts("ps\tshow the PID and Priority of all undergoing tasks\n\r");
-			puts("add_proc\tadd a dummy task \n\r");
+			puts("add\tadd a dummy task \n\r");
 			puts("host cmd\tcommand on host bash \n\r");
 		}
 		else if( strcmp(msg.str,"hello") ==0){
@@ -420,9 +547,12 @@ void my_shell_task(){
 			pTemp_c=&(msg.str[5]);
 			host_sys_cmd(pTemp_c);
 		}
-		else if( strcmp(msg.str,"ls") ==0 ){
-			ls_cmd_romfs();
+		else if( strcmp(msg.str,"mmtest") ==0){
+			enable_memory_test();
 		}
+	/*	else if( strcmp(msg.str,"x") ==0){
+			enable_prng_test();
+		}*/
 		else{
 			puts(msg.str);
 			puts(" is invalid command\n\r");
@@ -433,6 +563,7 @@ void my_shell_task(){
 
 
 extern const char _sromfs;
+
 
 int main()
 {
