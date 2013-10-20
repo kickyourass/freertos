@@ -363,10 +363,12 @@ static unsigned int lfsr=0xACE1;
 
 
 // Get a pseudorandom number generator from Wikipedia
-static unsigned int prng(unsigned int* ptr_lfsr )
+ int prng(unsigned int* ) __attribute__ ((naked));
+ int prng(unsigned int* ptr_lfsr )
 {
-/*	asm(
-      
+	asm(
+      	"   push    {r1,r2,r3,r4}         \n"
+      	
         "   ldrh    r2, [r0]         \n"
         "   lsr     r3, r2,#2     \n"
         "   EOR     r4, r3,r2       \n"
@@ -381,20 +383,18 @@ static unsigned int prng(unsigned int* ptr_lfsr )
         "   strh    r2,[r0]       \n"
         "   movt    r1, #0  \n"
         "   movw   r1, #65535 \n"
-        
         "   AND     r0,r1,r2  \n"
-    
-        
+        "   pop    {r1,r2,r3,r4}         \n"
         "   bx      lr              \n"
 		:::
-	);*/
+	);
 	//	  "   mov	  r0,#2  \n"
 
-    static unsigned int bit;
+   // static unsigned int bit;
     /* taps: 16 14 13 11; characteristic polynomial: x^16 + x^14 + x^13 + x^11 + 1 */
-    bit  = ((*ptr_lfsr >> 0) ^ (*ptr_lfsr >> 2) ^ (*ptr_lfsr >> 3) ^ (*ptr_lfsr >> 5) ) & 1;
-    *ptr_lfsr =  (*ptr_lfsr >> 1) | (bit << 15);
-    return *ptr_lfsr & 0xffff;
+  // bit  = ((*ptr_lfsr >> 0) ^ (*ptr_lfsr >> 2) ^ (*ptr_lfsr >> 3) ^ (*ptr_lfsr >> 5) ) & 1;
+  // *ptr_lfsr =  (*ptr_lfsr >> 1) | (bit << 15);
+  //  return *ptr_lfsr & 0xffff;
 }
 char* ptr_mem;
 
@@ -406,7 +406,7 @@ struct slot {
     unsigned int lfsr;
 };
 
-#define CIRCBUFSIZE 10
+#define CIRCBUFSIZE 500
 unsigned int write_pointer, read_pointer;
 static struct slot slots[CIRCBUFSIZE];
 
@@ -445,17 +445,18 @@ void enable_prng_test(){
 void enable_memory_test(){
 	int size,i;
     char *p;
-	
+	struct slot foo;
 		while (1) {
 		
 			size = prng(&lfsr) & 0x7FF;
-		  	printf("try to allocate %d bytes\n\r", size);
+		  	
 			p = (char *) pvPortMalloc(size);
+			printf("try to allocate %d bytes\n\r",size);
 			if (p == NULL) {
 				// can't do new allocations until we free some older ones
 				while (circbuf_size() > 0) {
 					// confirm that data didn't get trampled before freeing
-					struct slot foo = read_cb();
+					foo = read_cb();
 					p = foo.pointer;
 					lfsr = foo.lfsr;  // reset the PRNG to its earlier state
 					size = foo.size;
@@ -465,7 +466,7 @@ void enable_memory_test(){
 					
 						unsigned char v =  prng(&lfsr);
 						if (u != v) {
-							printf("ouch:%d %d\n\r", u,v);
+							printf("ouch:%d %d %d\n\r", u,v,i);
 							return 1;
 						}
 					}
@@ -478,11 +479,9 @@ void enable_memory_test(){
 				
 				write_cb((struct slot){.pointer=p, .size=size, .lfsr=lfsr});
 				for (i = 0; i < size; i++) {
-					
-					p[i] = (unsigned char)prng(&lfsr);
-				
+					p[i] = prng(&lfsr);
 				}
-				
+				printf("success to allocate %d bytes\n\r",size);
 			}
 		}
 
@@ -550,9 +549,9 @@ void my_shell_task(){
 		else if( strcmp(msg.str,"mmtest") ==0){
 			enable_memory_test();
 		}
-	/*	else if( strcmp(msg.str,"x") ==0){
+		else if( strcmp(msg.str,"prng") ==0){
 			enable_prng_test();
-		}*/
+		}
 		else{
 			puts(msg.str);
 			puts(" is invalid command\n\r");
