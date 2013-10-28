@@ -8,7 +8,10 @@
 #include "task.h"
 #include "queue.h"
 #include "semphr.h"
+#include "timers.h"
 //#include <string.h>
+#include "misc.h"
+#include "stm32f10x_tim.h"
 
 #include "filesystem.h"
 #include "fio.h"
@@ -127,7 +130,7 @@ void printf(char* str,...){
 	}
 	va_end(marker);
 }
-
+uint8_t tick_david=0x30;
 /* Queue structure used for passing messages. */
 typedef struct {
 	char str[100];
@@ -137,7 +140,60 @@ typedef struct {
 typedef struct {
 	char ch;
 } serial_ch_msg;
+#ifdef false
+void TIM2_IRQHandler(){
+	TIM_TypeDef*	timer2=TIM2;
+	__NOP();tick_david++;
+	USART_SendData(USART2, 'Q');
+	USART_SendData(USART2,timer2->CNT);
+}
+#endif
 
+
+	
+
+#define NUM_TIMERS 8
+xTimerHandle xTimers[NUM_TIMERS];
+int countdown_num=0;
+
+void CountdownCallback(){
+	printf("%d\n",--countdown_num);
+	if(countdown_num==0)
+		xTimerStop(xTimers[0],0);
+}
+
+
+void Countdown_Timer_Init(){
+
+	#ifdef false
+	TIM_TimeBaseInitTypeDef timer_setting;
+	NVIC_InitTypeDef NVIC_InitStructure;
+	
+	TIM_InternalClockConfig(TIM2);
+	timer_setting.TIM_ClockDivision=TIM_CKD_DIV2;
+	timer_setting.TIM_CounterMode=TIM_CounterMode_Up;
+	timer_setting.TIM_Period=0x56;
+	timer_setting.TIM_Prescaler=TIM_ICPSC_DIV2;
+	timer_setting.TIM_RepetitionCounter=0x56;
+	TIM_TimeBaseInit(TIM2,&timer_setting);
+	TIM_UpdateDisableConfig( TIM2, ENABLE);
+	
+	TIM_ITConfig(TIM2,TIM_IT_Update,ENABLE);
+	NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority =0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+	TIM_Cmd(TIM2,ENABLE);
+#endif
+	
+     xTimers[ 0 ] = xTimerCreate(     "Countdown",         // Just a text name, not used by the kernel.
+                                          ( 100 * 1 ),     // The timer period in ticks.
+                                          pdTRUE,         // The timers will auto-reload themselves when they expire.
+                                          ( void * ) 1,     // Assign each timer a unique id equal to its array index.
+                                          CountdownCallback     // Each timer calls the same callback when it expires.
+                                      );
+ 
+}
 /* IRQ handler to handle USART2 interruptss (both transmit and receive
  * interrupts). */
 void USART2_IRQHandler()
@@ -515,6 +571,9 @@ void my_shell_task(){
 			puts("ps\tshow the PID and Priority of all undergoing tasks\n\r");
 			puts("add\tadd a dummy task \n\r");
 			puts("host cmd\tcommand on host bash \n\r");
+			puts("mmtest\tenable dynamic mem alloc test \n\r");
+			puts("prng\ttest prng \n\r");
+			
 		}
 		else if( strcmp(msg.str,"hello") ==0){
 			puts("HelloWorld!\n\r");
@@ -552,6 +611,13 @@ void my_shell_task(){
 		else if( strcmp(msg.str,"prng") ==0){
 			enable_prng_test();
 		}
+		else if( strcmp(msg.str,"countdown") ==0){
+			puts("enter number:");
+			catch_msg(&msg);
+			countdown_num=str2int(&msg);
+			xTimerStart( xTimers[ 0 ], 0 );
+			while(countdown_num!=0);
+		}
 		else{
 			puts(msg.str);
 			puts(" is invalid command\n\r");
@@ -569,14 +635,14 @@ int main()
 	int i;
 	init_led();
 	
-
+	
 	init_button();
 	enable_button_interrupts();
 
 	init_rs232();
 	enable_rs232_interrupts();
 	enable_rs232();
-
+	Countdown_Timer_Init();
 	fs_init();
 	fio_init();
 	register_romfs("romfs", &_sromfs);
@@ -592,7 +658,7 @@ int main()
 	xTaskCreate(my_shell_task,
 					(signed portCHAR *) "Shell",
 					512 , NULL,
-					4, NULL);
+					0, NULL);
 	
 	
 	/* Start running the tasks. */

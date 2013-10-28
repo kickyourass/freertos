@@ -34,12 +34,15 @@ main.bin: main.c
 		$(STM32_LIB)/src/stm32f10x_gpio.c \
 		$(STM32_LIB)/src/stm32f10x_usart.c \
 		$(STM32_LIB)/src/stm32f10x_exti.c \
+		$(STM32_LIB)/src/stm32f10x_tim.c \
 		$(STM32_LIB)/src/misc.c \
 		\
 		$(FREERTOS_SRC)/croutine.c \
 		$(FREERTOS_SRC)/list.c \
 		$(FREERTOS_SRC)/queue.c \
 		$(FREERTOS_SRC)/tasks.c \
+		$(FREERTOS_SRC)/timers.c \
+
 		$(FREERTOS_SRC)/portable/GCC/ARM_CM3/port.c \
 		$(FREERTOS_SRC)/portable/MemMang/heap_1.c \
 		\

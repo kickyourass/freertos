@@ -71,6 +71,11 @@
  *
  * See http://www.freertos.org/a00110.html.
  *----------------------------------------------------------*/
+/*my define*/
+#define configTIMER_TASK_PRIORITY 10
+#define configTIMER_QUEUE_LENGTH 8
+#define configTIMER_TASK_STACK_DEPTH 256
+/*---------------------------------------  */
 
 #define configUSE_PREEMPTION		1
 #define configUSE_IDLE_HOOK			0
